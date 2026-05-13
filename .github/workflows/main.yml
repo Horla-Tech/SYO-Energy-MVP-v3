@@ -1,40 +1,71 @@
+name: SYO Energy Auto Deploy
+
 permissions:
   contents: write
-name: Extract ZIP Files
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
+    paths:
+      - '**.zip'
   workflow_dispatch:
 
 jobs:
-  extract-zip:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
-      - name: Find and extract ZIP files
+
+      # 🔓 Extract ZIP safely
+      - name: Extract ZIP files
         run: |
-          # Find all zip files in the repository
           find . -name "*.zip" -type f | while read zipfile; do
             echo "Extracting: $zipfile"
-            # Create extraction directory with the zip filename (without extension)
-            extract_dir="${zipfile%.zip}"
-            mkdir -p "$extract_dir"
-            # Extract the zip file
-            unzip -q "$zipfile" -d "$extract_dir"
-            echo "Extracted to: $extract_dir"
+            unzip -o -q "$zipfile" -d .
+            rm "$zipfile"
           done
-      
-      - name: Commit extracted files (optional)
+
+      # 🧹 Fix nested folder issue (IMPORTANT)
+      - name: Fix nested folders
+        run: |
+          if [ -d "syo-energy-v2/syo-energy-v2" ]; then
+            echo "Fixing nested structure..."
+            mv syo-energy-v2/syo-energy-v2/* syo-energy-v2/
+            rm -rf syo-energy-v2/syo-energy-v2
+          fi
+
+      # ⚡ Setup Node
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      # 📦 Install dependencies
+      - name: Install dependencies
+        run: |
+          cd syo-energy-v2
+          npm install
+
+      # 🏗 Build project (Next.js)
+      - name: Build project
+        run: |
+          cd syo-energy-v2
+          npm run build
+
+      # 💾 Commit cleaned structure (optional)
+      - name: Commit cleaned files
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+
           git add .
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Extract ZIP files" && git push)
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto clean & extract project"
+            git push
+          fi
