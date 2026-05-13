@@ -1,7 +1,11 @@
+
 name: SYO Energy Auto Deploy
 
 permissions:
   contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
   push:
@@ -16,26 +20,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 📥 Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 🔓 Extract ZIP safely
+      # 📦 Extract ZIP safely
       - name: Extract ZIP files
         run: |
+          mkdir -p temp_extract
+
           find . -name "*.zip" -type f | while read zipfile; do
             echo "Extracting: $zipfile"
-            unzip -o -q "$zipfile" -d .
+            unzip -o -q "$zipfile" -d temp_extract
             rm "$zipfile"
           done
 
-      # 🧹 Fix nested folder issue (IMPORTANT)
-      - name: Fix nested folders
+      # 🧠 Detect project root (VERY IMPORTANT)
+      - name: Detect project folder
+        id: detect
         run: |
-          if [ -d "syo-energy-v2/syo-energy-v2" ]; then
-            echo "Fixing nested structure..."
-            mv syo-energy-v2/syo-energy-v2/* syo-energy-v2/
-            rm -rf syo-energy-v2/syo-energy-v2
+          PROJECT_DIR=$(find temp_extract -name "package.json" -exec dirname {} \; | head -n 1)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "❌ No project folder found"
+            exit 1
           fi
+
+          echo "Detected project at: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+      # 🧹 Move project to clean location
+      - name: Normalize project structure
+        run: |
+          rm -rf project
+          mkdir project
+
+          rsync -a "$PROJECT_DIR"/ project/
+
+          rm -rf temp_extract
 
       # ⚡ Setup Node
       - name: Setup Node.js
@@ -46,17 +68,17 @@ jobs:
       # 📦 Install dependencies
       - name: Install dependencies
         run: |
-          cd syo-energy-v2
+          cd project
           npm install
 
-      # 🏗 Build project (Next.js)
+      # 🏗 Build project
       - name: Build project
         run: |
-          cd syo-energy-v2
+          cd project
           npm run build
 
-      # 💾 Commit cleaned structure (optional)
-      - name: Commit cleaned files
+      # 💾 Commit cleaned structure
+      - name: Commit changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
@@ -66,6 +88,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Auto clean & extract project"
+            git commit -m "Auto extract & normalize project"
             git push
           fi
