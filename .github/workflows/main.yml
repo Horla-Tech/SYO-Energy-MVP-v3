@@ -1,0 +1,38 @@
+name: Extract ZIP Files
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  extract-zip:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Find and extract ZIP files
+        run: |
+          # Find all zip files in the repository
+          find . -name "*.zip" -type f | while read zipfile; do
+            echo "Extracting: $zipfile"
+            # Create extraction directory with the zip filename (without extension)
+            extract_dir="${zipfile%.zip}"
+            mkdir -p "$extract_dir"
+            # Extract the zip file
+            unzip -q "$zipfile" -d "$extract_dir"
+            echo "Extracted to: $extract_dir"
+          done
+      
+      - name: Commit extracted files (optional)
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Extract ZIP files" && git push)
